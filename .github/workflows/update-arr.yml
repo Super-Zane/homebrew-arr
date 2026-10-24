@@ -1,0 +1,85 @@
+name: Update Radarr and Sonarr
+
+on:
+  schedule:
+    - cron: "23 3 * * *"
+  workflow_dispatch:
+
+permissions:
+  contents: write
+
+jobs:
+  update:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Check out tap
+        uses: actions/checkout@v4
+
+      - name: Download stable upstream releases and calculate checksums
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          set -euo pipefail
+
+          radarr_version="$(gh release view --repo Radarr/Radarr --json tagName --jq '.tagName' | sed 's/^v//')"
+          sonarr_version="$(gh release view --repo Sonarr/Sonarr --json tagName --jq '.tagName' | sed 's/^v//')"
+
+          for arch in arm64 x64; do
+            radarr_url="https://github.com/Radarr/Radarr/releases/download/v${radarr_version}/Radarr.master.${radarr_version}.osx-app-core-${arch}.zip"
+            sonarr_url="https://github.com/Sonarr/Sonarr/releases/download/v${sonarr_version}/Sonarr.main.${sonarr_version}.osx-${arch}-app.zip"
+
+            curl --fail --location --retry 3 --output "radarr-${arch}.zip" "${radarr_url}"
+            curl --fail --location --retry 3 --output "sonarr-${arch}.zip" "${sonarr_url}"
+
+            sha256sum "radarr-${arch}.zip" | awk '{print $1}' > "radarr-${arch}.sha256"
+            sha256sum "sonarr-${arch}.zip" | awk '{print $1}' > "sonarr-${arch}.sha256"
+          done
+
+          printf '%s\n' "${radarr_version}" > radarr.version
+          printf '%s\n' "${sonarr_version}" > sonarr.version
+
+      - name: Update casks
+        run: |
+          set -euo pipefail
+          python3 - <<'PY'
+          from pathlib import Path
+          import re
+
+          replacements = {
+              Path("Casks/r/radarr.rb"): (
+                  Path("radarr.version").read_text().strip(),
+                  Path("radarr-arm64.sha256").read_text().strip(),
+                  Path("radarr-x64.sha256").read_text().strip(),
+              ),
+              Path("Casks/s/sonarr.rb"): (
+                  Path("sonarr.version").read_text().strip(),
+                  Path("sonarr-arm64.sha256").read_text().strip(),
+                  Path("sonarr-x64.sha256").read_text().strip(),
+              ),
+          }
+
+          for path, (version, arm, intel) in replacements.items():
+              text = path.read_text()
+              text = re.sub(r'version "[^"]+"', f'version "{version}"', text, count=1)
+              text = re.sub(
+                  r'sha256 arm:   "[0-9a-f]+",\n         intel: "[0-9a-f]+"',
+                  f'sha256 arm:   "{arm}",\n         intel: "{intel}"',
+                  text,
+                  count=1,
+              )
+              path.write_text(text)
+          PY
+
+      - name: Commit changed casks
+        run: |
+          set -euo pipefail
+          if git diff --quiet -- Casks/r/radarr.rb Casks/s/sonarr.rb; then
+            echo "Radarr and Sonarr are already up to date."
+            exit 0
+          fi
+
+          git config user.name "github-actions[bot]"
+          git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
+          git add Casks/r/radarr.rb Casks/s/sonarr.rb
+          git commit -m "Update Radarr and Sonarr"
+          git push
