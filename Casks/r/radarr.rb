@@ -5,8 +5,7 @@ cask "radarr" do
   sha256 arm:   "fda0e0750717cbde378775f60b25e328a8fb8677f6a070b7c84c5f212827ec8b8",
          intel: "9808f0827448aca9a9f82d055d0f25aeee061351326b2d8348b9f7d48f69a646"
 
-  url "https://github.com/Radarr/Radarr/releases/download/v#{version}/Radarr.master.#{version}.osx-app-core-#{arch}.zip",
-      verified: "github.com/Radarr/Radarr/"
+  url "https://github.com/Radarr/Radarr/releases/download/v#{version}/Radarr.master.#{version}.osx-app-core-#{arch}.zip"
   name "Radarr"
   desc "Fork of Sonarr to work with movies à la Couchpotato"
   homepage "https://radarr.video/"
